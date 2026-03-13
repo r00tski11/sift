@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ipa-analyzer"
+version = "0.1.0"
+description = "iOS IPA Security Analyzer - Static security analysis for iOS apps"
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "macholib>=1.16.0",
+    "jinja2>=3.1.0",
+    "pyyaml>=6.0",
+    "fpdf2>=2.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+ipa-analyzer = "ipa_analyzer.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ipa_analyzer = ["reporters/templates/*.html"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

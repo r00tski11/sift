@@ -1,0 +1,168 @@
+rules:
+  - id: swift-hardcoded-password
+    patterns:
+      - pattern: |
+          let $VAR = "..."
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i)(password|passwd|secret|api_key|apikey|token|auth)
+    message: >-
+      Hardcoded credential found in variable '$VAR'. Use Keychain or
+      environment variables instead.
+    languages: [swift]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      owasp: "M9 - Reverse Engineering"
+
+  - id: swift-disabled-ats
+    pattern-regex: NSAllowsArbitraryLoads\s*=\s*true
+    message: >-
+      App Transport Security is disabled, allowing insecure HTTP connections.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-319: Cleartext Transmission of Sensitive Information"
+      owasp: "M3 - Insecure Communication"
+
+  - id: swift-disabled-cert-validation
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $HANDLER(.useCredential, ...)
+          - pattern: ServerTrustPolicy.disableEvaluation
+    message: >-
+      Certificate validation is disabled or bypassed. This allows
+      man-in-the-middle attacks.
+    languages: [swift]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+      owasp: "M3 - Insecure Communication"
+
+  - id: swift-insecure-random
+    patterns:
+      - pattern-either:
+          - pattern: arc4random()
+          - pattern: arc4random_uniform(...)
+          - pattern: srand(...)
+          - pattern: rand()
+    message: >-
+      Insecure random number generator used. Use SecRandomCopyBytes for
+      cryptographic operations.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-338: Use of Cryptographically Weak PRNG"
+      owasp: "M5 - Insufficient Cryptography"
+
+  - id: swift-clipboard-sensitive-data
+    pattern: |
+      UIPasteboard.general.string = $DATA
+    message: >-
+      Sensitive data may be written to the clipboard, which is shared across
+      apps.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-200: Exposure of Sensitive Information"
+      owasp: "M2 - Insecure Data Storage"
+
+  - id: swift-webview-javascript-enabled
+    pattern: |
+      $CONFIG.preferences.javaScriptEnabled = true
+    message: >-
+      JavaScript is enabled in WebView. Ensure content is trusted to prevent
+      XSS.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation"
+      owasp: "M7 - Client Code Quality"
+
+  - id: swift-keychain-no-access-control
+    patterns:
+      - pattern: SecItemAdd($QUERY, ...)
+      - pattern-not-inside: |
+          ...
+          $QUERY[kSecAttrAccessControl] = ...
+          ...
+    message: >-
+      Keychain item added without access control. Set kSecAttrAccessControl
+      for sensitive data.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-922: Insecure Storage of Sensitive Information"
+      owasp: "M2 - Insecure Data Storage"
+
+  - id: swift-userdefaults-sensitive
+    patterns:
+      - pattern: |
+          UserDefaults.standard.set($VALUE, forKey: $KEY)
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i).*(password|token|secret|key|credential|auth|session).*
+    message: >-
+      Sensitive data stored in UserDefaults, which is not encrypted. Use
+      Keychain instead.
+    languages: [swift]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-312: Cleartext Storage of Sensitive Information"
+      owasp: "M2 - Insecure Data Storage"
+
+  - id: swift-insecure-file-permissions
+    patterns:
+      - pattern-either:
+          - pattern: |
+              try $DATA.write(to: $URL, options: .noFileProtection)
+          - pattern: |
+              FileManager.default.createFile(..., attributes: [.posixPermissions: 0o777])
+    message: >-
+      Insecure file permissions or no file protection. Use
+      .completeFileProtection for sensitive files.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-276: Incorrect Default Permissions"
+      owasp: "M2 - Insecure Data Storage"
+
+  - id: swift-md5-usage
+    patterns:
+      - pattern-either:
+          - pattern: CC_MD5(...)
+          - pattern: Insecure.MD5.hash(...)
+    message: >-
+      MD5 is cryptographically broken. Use SHA-256 or SHA-3 for hashing.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-328: Use of Weak Hash"
+      owasp: "M5 - Insufficient Cryptography"
+
+  - id: swift-http-url-hardcoded
+    pattern-regex: "\"http://[a-zA-Z0-9]"
+    message: >-
+      Hardcoded HTTP URL found. Use HTTPS for all network communications.
+    languages: [swift]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-319: Cleartext Transmission of Sensitive Information"
+      owasp: "M3 - Insecure Communication"
+
+  - id: swift-sql-injection
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $DB.executeUpdate("...\($USERINPUT)...")
+          - pattern: |
+              $DB.executeQuery("...\($USERINPUT)...")
+    message: >-
+      Potential SQL injection via string interpolation. Use parameterized
+      queries.
+    languages: [swift]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-89: SQL Injection"
+      owasp: "M7 - Client Code Quality"

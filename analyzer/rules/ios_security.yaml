@@ -1,0 +1,498 @@
+# iOS Security Expert Ruleset for IPA Analyzer
+# Comprehensive detection rules covering OWASP Mobile Top 10 2024
+# Author: IPA Analyzer Team
+# Version: 1.0.0
+
+rules:
+  # ============================================================
+  # HARDCODED CREDENTIALS (12 rules)
+  # OWASP M9 - Insecure Data Storage | CWE-798
+  # ============================================================
+
+  - id: cred_slack_webhook
+    name: "Hardcoded Slack Webhook URL"
+    pattern: "https://hooks\\.slack\\.com/services/T[A-Z0-9]{8,}/B[A-Z0-9]{8,}/[A-Za-z0-9]{20,}"
+    severity: critical
+    description: "Slack webhook URL found in binary. An attacker can send messages to the Slack channel or exfiltrate data."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Remove hardcoded webhook URL. Fetch from a secure backend at runtime."
+
+  - id: cred_stripe_secret
+    name: "Hardcoded Stripe Secret Key"
+    pattern: "sk_live_[0-9a-zA-Z]{24,}"
+    severity: critical
+    description: "Stripe secret API key found in binary. This grants full access to the Stripe account including payment processing."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Never embed Stripe secret keys in client apps. Process payments server-side only."
+
+  - id: cred_stripe_publishable
+    name: "Hardcoded Stripe Publishable Key"
+    pattern: "pk_live_[0-9a-zA-Z]{24,}"
+    severity: low
+    description: "Stripe publishable key found in binary. While intended for client use, hardcoding limits key rotation."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Consider fetching publishable keys from a configuration endpoint to enable rotation."
+
+  - id: cred_sendgrid
+    name: "Hardcoded SendGrid API Key"
+    pattern: "SG\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}"
+    severity: critical
+    description: "SendGrid API key found in binary. An attacker can send emails on behalf of the account."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Remove SendGrid key from client. Send emails through a secure backend service."
+
+  - id: cred_twilio
+    name: "Hardcoded Twilio API Key"
+    pattern: "SK[0-9a-fA-F]{32}"
+    severity: critical
+    description: "Twilio API key found in binary. An attacker can send SMS/calls and incur charges."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Remove Twilio credentials from client. Proxy communication through a backend service."
+
+  - id: cred_mailgun
+    name: "Hardcoded Mailgun API Key"
+    pattern: "key-[0-9a-zA-Z]{32}"
+    severity: high
+    description: "Potential Mailgun API key found in binary."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Remove Mailgun key from client. Send emails through a backend service."
+
+  - id: cred_pusher
+    name: "Hardcoded Pusher Credentials"
+    pattern: "(?i)pusher[_-]?(key|secret)\\s*[:=]\\s*['\"][a-f0-9]{20}"
+    severity: high
+    description: "Pusher credentials found in binary. Attackers could publish messages to channels."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Use Pusher client-side key only (not secret). Authenticate via backend."
+
+  - id: cred_mapbox
+    name: "Hardcoded Mapbox Secret Token"
+    pattern: "sk\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
+    severity: high
+    description: "Mapbox secret token found in binary. Secret tokens should only be used server-side."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Use a public (pk.*) token for client-side. Keep secret tokens on the server."
+
+  - id: cred_algolia
+    name: "Hardcoded Algolia Admin API Key"
+    pattern: "(?i)algolia[_-]?admin[_-]?key\\s*[:=]\\s*['\"][a-f0-9]{32}"
+    severity: critical
+    description: "Algolia admin API key found. Admin keys allow full index manipulation."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Use search-only API keys on the client. Keep admin keys server-side."
+
+  - id: cred_braintree_sandbox
+    name: "Hardcoded Braintree Sandbox Credentials"
+    pattern: "sandbox_[a-z0-9]{8}_[a-z0-9]{16,}"
+    severity: medium
+    description: "Braintree sandbox credentials found in production binary."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Remove sandbox credentials from production builds."
+
+  - id: cred_hockeyapp
+    name: "Hardcoded HockeyApp/AppCenter Token"
+    pattern: "(?i)(hockey|appcenter)[_-]?(app[_-]?)?(token|id|secret)\\s*[:=]\\s*['\"][a-f0-9]{32,36}"
+    severity: medium
+    description: "HockeyApp or AppCenter credentials found in binary."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Store crash reporting tokens in a build configuration, not hardcoded."
+
+  - id: cred_generic_bearer
+    name: "Hardcoded Bearer Token"
+    pattern: "(?i)bearer\\s+[A-Za-z0-9_-]{20,}"
+    severity: high
+    description: "Hardcoded Bearer authentication token found in binary."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Obtain auth tokens at runtime through proper OAuth/authentication flows."
+
+  # ============================================================
+  # INTERNAL / STAGING URLS (5 rules)
+  # OWASP M8 - Security Misconfiguration | CWE-200
+  # ============================================================
+
+  - id: url_staging
+    name: "Staging/Test URL Leaked in Binary"
+    pattern: "https?://staging[\\.-][a-zA-Z0-9]"
+    severity: high
+    description: "Staging environment URL found in production binary. This exposes internal infrastructure."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Use build configurations to inject environment-specific URLs. Strip staging references from release builds."
+
+  - id: url_dev
+    name: "Development URL Leaked in Binary"
+    pattern: "https?://dev[\\.-][a-zA-Z0-9]"
+    severity: high
+    description: "Development environment URL found in production binary. Internal endpoints may lack production-grade security."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Use build configurations or feature flags. Ensure only production URLs are in release builds."
+
+  - id: url_internal
+    name: "Internal URL Leaked in Binary"
+    pattern: "https?://internal[\\.-][a-zA-Z0-9]"
+    severity: high
+    description: "Internal environment URL found in production binary."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Remove internal URLs from release builds. Use environment configuration."
+
+  - id: url_localhost
+    name: "Localhost Reference in Binary"
+    pattern: "https?://localhost[:/]"
+    severity: medium
+    description: "Localhost URL found in production binary. May indicate debug configuration left in release."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Remove localhost references from production builds."
+
+  - id: url_local_domain
+    name: "Local Domain Reference in Binary"
+    pattern: "https?://[a-zA-Z0-9-]+\\.local[:/]"
+    severity: medium
+    description: "Local network domain (.local) found in binary. Indicates Bonjour/mDNS service reference."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Ensure .local domain references are intentional and not leftover development artifacts."
+
+  # ============================================================
+  # DEBUG / LOGGING (4 rules)
+  # OWASP M9 - Insecure Data Storage | CWE-532
+  # ============================================================
+
+  - id: log_nslog_sensitive
+    name: "NSLog Logging Sensitive Data"
+    pattern: "(?i)NSLog.*(password|token|secret|api_key|credential|auth)"
+    severity: medium
+    description: "NSLog call appears to log sensitive data. Console logs are accessible via device logs and crash reports."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 532
+    remediation: "Remove logging of sensitive data. Use os_log with private visibility for necessary debug logging."
+
+  - id: log_print_sensitive
+    name: "Print Statement Logging Sensitive Data"
+    pattern: "(?i)print\\(.*(password|token|secret|api_key|credential|auth)"
+    severity: medium
+    description: "print() call appears to output sensitive data. Output is visible in device console."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 532
+    remediation: "Remove print statements with sensitive data. Use os_log with private visibility instead."
+
+  - id: log_debugprint
+    name: "debugPrint Usage in Production"
+    pattern: "debugPrint\\("
+    severity: low
+    description: "debugPrint() found in binary. Debug output should be stripped from production builds."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 532
+    remediation: "Wrap debugPrint in DEBUG compiler flags or remove from release builds."
+
+  - id: log_oslog_sensitive
+    name: "os_log Logging Sensitive Data"
+    pattern: "(?i)os_log.*(password|token|secret|api_key|credential)"
+    severity: medium
+    description: "os_log call appears to log sensitive data. Use %%{private} for sensitive values."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 532
+    remediation: "Use os_log with %{private} format specifier for any sensitive data."
+
+  # ============================================================
+  # BANNED C FUNCTIONS (8 rules)
+  # OWASP M4 - Insufficient Input/Output Validation | CWE-120
+  # ============================================================
+
+  - id: api_strcpy
+    name: "Banned Function: strcpy"
+    pattern: "_strcpy"
+    severity: medium
+    description: "strcpy() does not check buffer bounds and is a common source of buffer overflows."
+    owasp: "M4 - Insufficient Input/Output Validation"
+    cwe_id: 120
+    remediation: "Replace with strlcpy() or strncpy() with explicit size checks."
+
+  - id: api_strcat
+    name: "Banned Function: strcat"
+    pattern: "_strcat"
+    severity: medium
+    description: "strcat() does not check buffer bounds and can cause buffer overflows."
+    owasp: "M4 - Insufficient Input/Output Validation"
+    cwe_id: 120
+    remediation: "Replace with strlcat() or strncat() with explicit size checks."
+
+  - id: api_sprintf
+    name: "Banned Function: sprintf"
+    pattern: "_sprintf"
+    severity: medium
+    description: "sprintf() does not check buffer bounds. Use snprintf() instead."
+    owasp: "M4 - Insufficient Input/Output Validation"
+    cwe_id: 120
+    remediation: "Replace with snprintf() which accepts a maximum buffer size."
+
+  - id: api_gets
+    name: "Banned Function: gets"
+    pattern: "_gets"
+    severity: high
+    description: "gets() is fundamentally unsafe - it has no way to limit input length. Removed in C11."
+    owasp: "M4 - Insufficient Input/Output Validation"
+    cwe_id: 120
+    remediation: "Replace with fgets() with explicit buffer size."
+
+  - id: api_scanf
+    name: "Banned Function: scanf family"
+    pattern: "_v?s?scanf"
+    severity: medium
+    description: "scanf family functions can cause buffer overflows without width specifiers."
+    owasp: "M4 - Insufficient Input/Output Validation"
+    cwe_id: 676
+    remediation: "Use width-limited format specifiers or safer input parsing alternatives."
+
+  - id: api_vsprintf
+    name: "Banned Function: vsprintf"
+    pattern: "_vsprintf"
+    severity: medium
+    description: "vsprintf() does not check buffer bounds. Use vsnprintf() instead."
+    owasp: "M4 - Insufficient Input/Output Validation"
+    cwe_id: 120
+    remediation: "Replace with vsnprintf() which accepts a maximum buffer size."
+
+  - id: api_weak_rng
+    name: "Weak Random Number Generator"
+    pattern: "_s?random?\\b"
+    severity: medium
+    description: "Weak PRNG functions (rand/srand/random) produce predictable output unsuitable for security use."
+    owasp: "M10 - Insufficient Cryptography"
+    cwe_id: 330
+    remediation: "Use SecRandomCopyBytes() or arc4random_uniform() for secure randomness."
+
+  - id: api_alloca
+    name: "Unsafe Stack Allocation: alloca"
+    pattern: "_alloca"
+    severity: low
+    description: "alloca() allocates on the stack without bounds checking, risking stack overflow."
+    owasp: "M4 - Insufficient Input/Output Validation"
+    cwe_id: 676
+    remediation: "Use heap allocation (malloc/calloc) with proper bounds checking."
+
+  # ============================================================
+  # INSECURE DATA STORAGE (3 rules)
+  # OWASP M9 - Insecure Data Storage | CWE-312/CWE-922
+  # ============================================================
+
+  - id: storage_nsuserdefaults
+    name: "Sensitive Data in NSUserDefaults"
+    pattern: "(?i)NSUserDefaults.*(?:password|token|secret|session|api.?key|credential|auth)"
+    severity: high
+    description: "Sensitive data appears to be stored in NSUserDefaults, which is not encrypted and backed up to iCloud."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 922
+    remediation: "Store sensitive data in the Keychain using kSecAttrAccessible with appropriate protection level."
+
+  - id: storage_pasteboard
+    name: "UIPasteboard Usage for Sensitive Data"
+    pattern: "UIPasteboard\\s*\\.general"
+    severity: medium
+    description: "UIPasteboard.general is shared across all apps. Sensitive data placed on the pasteboard can be read by other apps."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Use UIPasteboard(name:create:) for app-specific pasteboards. Set expiration dates."
+
+  - id: storage_tempdir_sensitive
+    name: "Sensitive Data in Temporary Directory"
+    pattern: "(?i)NSTemporaryDirectory\\(\\).*(write|save|store|password|token|secret)"
+    severity: medium
+    description: "Temporary directory may be used to store sensitive data. Temp files are not encrypted and may persist."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Use Data Protection API with appropriate file protection level. Clean up temp files promptly."
+
+  # ============================================================
+  # THIRD-PARTY SDK INDICATORS (6 rules)
+  # OWASP M6 - Inadequate Privacy Controls | CWE-359
+  # ============================================================
+
+  - id: sdk_facebook
+    name: "Facebook SDK Detected"
+    pattern: "FBSDKCoreKit|FBSDKLoginKit|FBSDKShareKit"
+    severity: info
+    description: "Facebook SDK is bundled. Ensure privacy manifest declares tracking domains and data collection."
+    owasp: "M6 - Inadequate Privacy Controls"
+    cwe_id: 359
+    remediation: "Verify PrivacyInfo.xcprivacy includes Facebook SDK tracking domains and data types."
+
+  - id: sdk_adjust
+    name: "Adjust SDK Detected"
+    pattern: "ADJConfig|AdjustSdk|Adjust\\.appDidLaunch"
+    severity: info
+    description: "Adjust attribution SDK detected. This SDK tracks installs and user behavior."
+    owasp: "M6 - Inadequate Privacy Controls"
+    cwe_id: 359
+    remediation: "Declare Adjust tracking in privacy manifest. Ensure ATT consent is obtained before tracking."
+
+  - id: sdk_appsflyer
+    name: "AppsFlyer SDK Detected"
+    pattern: "AppsFlyerLib|AppsFlyerTracker"
+    severity: info
+    description: "AppsFlyer attribution SDK detected. Collects device data for install attribution."
+    owasp: "M6 - Inadequate Privacy Controls"
+    cwe_id: 359
+    remediation: "Declare tracking in privacy manifest. Respect ATTrackingManager authorization status."
+
+  - id: sdk_branch
+    name: "Branch.io SDK Detected"
+    pattern: "Branch\\.getInstance|BranchEvent|io\\.branch"
+    severity: info
+    description: "Branch.io deep linking and attribution SDK detected."
+    owasp: "M6 - Inadequate Privacy Controls"
+    cwe_id: 359
+    remediation: "Declare Branch tracking domains in privacy manifest."
+
+  - id: sdk_firebase_analytics
+    name: "Firebase Analytics SDK Detected"
+    pattern: "FIRAnalytics|FirebaseAnalytics|firebase_analytics"
+    severity: info
+    description: "Firebase Analytics detected. Collects app usage data and sends to Google servers."
+    owasp: "M6 - Inadequate Privacy Controls"
+    cwe_id: 359
+    remediation: "Declare Firebase data collection in privacy manifest. Allow users to opt out."
+
+  - id: sdk_google_ads
+    name: "Google Mobile Ads SDK Detected"
+    pattern: "GADMobileAds|GoogleMobileAds|GADRequest"
+    severity: info
+    description: "Google Mobile Ads SDK detected. Collects device data for ad targeting."
+    owasp: "M6 - Inadequate Privacy Controls"
+    cwe_id: 359
+    remediation: "Declare ad tracking in privacy manifest. Implement ATT consent flow."
+
+  # ============================================================
+  # JAILBREAK DETECTION INDICATORS (3 rules)
+  # OWASP M7 - Insufficient Binary Protections | CWE-693
+  # Presence = POSITIVE security indicator
+  # ============================================================
+
+  - id: security_jailbreak_cydia
+    name: "Jailbreak Detection: Cydia Check"
+    pattern: "cydia://|/Applications/Cydia\\.app|/Library/MobileSubstrate"
+    severity: info
+    description: "Jailbreak detection strings found (Cydia). This is a POSITIVE security indicator - the app checks for jailbroken devices."
+    owasp: "M7 - Insufficient Binary Protections"
+    cwe_id: 693
+    remediation: "No action needed. Ensure jailbreak detection triggers appropriate security response."
+
+  - id: security_jailbreak_frida
+    name: "Anti-Tampering: Frida Detection"
+    pattern: "frida-server|frida-gadget|FridaGadget"
+    severity: info
+    description: "Frida detection strings found. This is a POSITIVE indicator - the app detects runtime instrumentation."
+    owasp: "M7 - Insufficient Binary Protections"
+    cwe_id: 693
+    remediation: "No action needed. Ensure detection triggers appropriate response (not just a log)."
+
+  - id: security_jailbreak_substrate
+    name: "Anti-Tampering: Substrate Detection"
+    pattern: "MobileSubstrate|CydiaSubstrate|SubstrateLoader|substrate\\.h"
+    severity: info
+    description: "Cydia Substrate detection found. This is a POSITIVE indicator - the app detects hooking frameworks."
+    owasp: "M7 - Insufficient Binary Protections"
+    cwe_id: 693
+    remediation: "No action needed. Ensure detection includes response beyond logging."
+
+  # ============================================================
+  # URL SCHEME / DEEP LINKING (2 rules)
+  # OWASP M1 - Improper Platform Usage | CWE-939
+  # ============================================================
+
+  - id: config_url_scheme
+    name: "Custom URL Scheme Registered"
+    pattern: "CFBundleURLSchemes"
+    severity: info
+    description: "App registers custom URL schemes. Custom schemes can be hijacked by malicious apps."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 939
+    remediation: "Prefer Universal Links (applinks:) over custom URL schemes. Validate all URL scheme input."
+
+  - id: config_universal_links
+    name: "Universal Links Configured"
+    pattern: "applinks:"
+    severity: info
+    description: "Universal Links configured. This is more secure than custom URL schemes."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 939
+    remediation: "No action needed. Universal Links are the recommended approach for deep linking."
+
+  # ============================================================
+  # CERTIFICATE PINNING INDICATORS (2 rules)
+  # OWASP M5 - Insecure Communication | CWE-295
+  # Presence = POSITIVE security indicator
+  # ============================================================
+
+  - id: security_trustkit
+    name: "Certificate Pinning: TrustKit Detected"
+    pattern: "TrustKit|TSKPinningValidator|TSKPinningValidatorCallback"
+    severity: info
+    description: "TrustKit certificate pinning library detected. This is a POSITIVE security indicator."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 295
+    remediation: "No action needed. Ensure pin set includes backup pins for rotation."
+
+  - id: security_urlsession_auth
+    name: "Certificate Pinning: URLSession Auth Challenge"
+    pattern: "urlSession.*didReceive.*challenge|URLAuthenticationChallenge|SecTrustEvaluate"
+    severity: info
+    description: "URLSession authentication challenge handling detected. May indicate custom certificate validation."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 295
+    remediation: "Verify the challenge handler properly validates server certificates and doesn't blindly trust all."
+
+  # ============================================================
+  # DEPRECATED iOS APIs (4 rules)
+  # OWASP M7 - Insufficient Binary Protections | CWE-477
+  # ============================================================
+
+  - id: api_uiwebview
+    name: "Deprecated UIWebView Usage"
+    pattern: "UIWebView|_OBJC_CLASS_\\$_UIWebView"
+    severity: medium
+    description: "UIWebView is deprecated since iOS 12 and rejected by App Store. It has known security vulnerabilities."
+    owasp: "M7 - Insufficient Binary Protections"
+    cwe_id: 477
+    remediation: "Migrate to WKWebView which has better security, performance, and is required by Apple."
+
+  - id: api_addressbook
+    name: "Deprecated AddressBook Framework"
+    pattern: "AddressBook\\.framework|ABAddressBook|ABPerson"
+    severity: low
+    description: "Deprecated AddressBook framework detected. Deprecated since iOS 9."
+    owasp: "M7 - Insufficient Binary Protections"
+    cwe_id: 477
+    remediation: "Migrate to Contacts framework (CNContactStore, CNContact)."
+
+  - id: api_uialertview
+    name: "Deprecated UIAlertView"
+    pattern: "UIAlertView|_OBJC_CLASS_\\$_UIAlertView"
+    severity: low
+    description: "Deprecated UIAlertView detected. Deprecated since iOS 9."
+    owasp: "M7 - Insufficient Binary Protections"
+    cwe_id: 477
+    remediation: "Migrate to UIAlertController."
+
+  - id: api_uiactionsheet
+    name: "Deprecated UIActionSheet"
+    pattern: "UIActionSheet|_OBJC_CLASS_\\$_UIActionSheet"
+    severity: low
+    description: "Deprecated UIActionSheet detected. Deprecated since iOS 8."
+    owasp: "M7 - Insufficient Binary Protections"
+    cwe_id: 477
+    remediation: "Migrate to UIAlertController with preferredStyle: .actionSheet."

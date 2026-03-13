@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPA Security Report - {{ app_name }}</title>
+    <style>
+        :root {
+            --bg: #f3f4f6;
+            --surface: #ffffff;
+            --surface-hover: #f9fafb;
+            --text: #1a1a2e;
+            --text-muted: #6b7280;
+            --border: #e5e7eb;
+            --header-bg: #1a1a2e;
+            --header-text: #ffffff;
+            --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
+            --radius: 10px;
+            --mono: 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+        }
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface-hover: #263548;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --header-bg: #0c1222;
+            --header-text: #e2e8f0;
+            --shadow: 0 1px 3px rgba(0,0,0,0.3);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 2rem 1rem;
+        }
+        .container { max-width: 1100px; margin: 0 auto; }
+
+        /* Header */
+        .header {
+            background: var(--header-bg);
+            color: var(--header-text);
+            padding: 2rem;
+            border-radius: var(--radius);
+            margin-bottom: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .header h1 { font-size: 1.4rem; margin-bottom: 0.4rem; font-weight: 700; }
+        .header .meta { opacity: 0.75; font-size: 0.85rem; line-height: 1.7; }
+        .theme-toggle {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: var(--header-text);
+            font-size: 1.3rem;
+            cursor: pointer;
+            border-radius: 8px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: background 0.2s;
+        }
+        .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+
+        /* Summary */
+        .summary {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: var(--radius);
+            margin-bottom: 1.5rem;
+            box-shadow: var(--shadow);
+        }
+        .summary h2 { font-size: 1.1rem; margin-bottom: 0.3rem; }
+        .summary .sub { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; }
+        .summary-grid { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+        .severity-count {
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            font-weight: 600;
+            min-width: 90px;
+            text-align: center;
+        }
+        .severity-count .count { font-size: 1.4rem; display: block; }
+        .severity-count .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        /* Severity colors */
+        .sev-critical { background: #fde8e8; color: #991b1b; }
+        .sev-high { background: #fee2e2; color: #b91c1c; }
+        .sev-medium { background: #fef3c7; color: #92400e; }
+        .sev-low { background: #dbeafe; color: #1e40af; }
+        .sev-info { background: #f3f4f6; color: #6b7280; }
+        [data-theme="dark"] .sev-critical { background: #450a0a; color: #fca5a5; }
+        [data-theme="dark"] .sev-high { background: #7f1d1d; color: #fecaca; }
+        [data-theme="dark"] .sev-medium { background: #78350f; color: #fde68a; }
+        [data-theme="dark"] .sev-low { background: #1e3a5f; color: #93c5fd; }
+        [data-theme="dark"] .sev-info { background: #374151; color: #d1d5db; }
+
+        /* Toolbar */
+        .toolbar {
+            background: var(--surface);
+            padding: 1rem 1.5rem;
+            border-radius: var(--radius);
+            margin-bottom: 1.5rem;
+            box-shadow: var(--shadow);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .search-input {
+            flex: 1;
+            min-width: 200px;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: var(--bg);
+            color: var(--text);
+            outline: none;
+        }
+        .search-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+        .filter-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+        .chip {
+            padding: 0.3rem 0.7rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 2px solid transparent;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            transition: opacity 0.2s;
+            user-select: none;
+        }
+        .chip.inactive { opacity: 0.35; }
+
+        /* Sections & Accordion */
+        .severity-section { margin-bottom: 1.5rem; }
+        .severity-section h2 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .section-count { font-weight: 400; color: var(--text-muted); font-size: 0.85rem; }
+
+        .finding-group {
+            background: var(--surface);
+            border-radius: var(--radius);
+            margin-bottom: 0.5rem;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            border-left: 4px solid #ccc;
+        }
+        .finding-group.critical { border-left-color: #991b1b; }
+        .finding-group.high { border-left-color: #dc2626; }
+        .finding-group.medium { border-left-color: #d97706; }
+        .finding-group.low { border-left-color: #2563eb; }
+        .finding-group.info { border-left-color: #9ca3af; }
+
+        .accordion-header {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 1.25rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font: inherit;
+            color: var(--text);
+            text-align: left;
+        }
+        .accordion-header:hover { background: var(--surface-hover); }
+        .badge {
+            padding: 0.2rem 0.55rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: white;
+            flex-shrink: 0;
+        }
+        .badge.critical { background: #991b1b; }
+        .badge.high { background: #dc2626; }
+        .badge.medium { background: #d97706; }
+        .badge.low { background: #2563eb; }
+        .badge.info { background: #9ca3af; }
+        .group-title { font-weight: 600; font-size: 0.95rem; flex: 1; }
+        .count-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: var(--bg);
+            padding: 0.15rem 0.55rem;
+            border-radius: 12px;
+            flex-shrink: 0;
+        }
+        .chevron {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            transition: transform 0.25s ease;
+            flex-shrink: 0;
+        }
+        .accordion-header[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+
+        .accordion-body {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .accordion-content {
+            padding: 0 1.25rem 1.25rem 1.25rem;
+        }
+        .group-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+        .group-meta {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: var(--bg);
+            border-radius: 6px;
+        }
+        .group-meta span { display: inline-flex; gap: 0.3rem; }
+        .group-meta strong { color: var(--text); }
+        .remediation-text { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; padding: 0.75rem; background: var(--bg); border-radius: 6px; border-left: 3px solid #3b82f6; }
+        .remediation-text strong { color: var(--text); }
+
+        .instance-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+        .instance-table th {
+            text-align: left;
+            padding: 0.5rem 0.6rem;
+            border-bottom: 2px solid var(--border);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-muted);
+        }
+        .instance-table td {
+            padding: 0.45rem 0.6rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        .instance-table tr:last-child td { border-bottom: none; }
+        .instance-table tr:nth-child(even) { background: var(--bg); }
+        .instance-table code {
+            font-family: var(--mono);
+            font-size: 0.78rem;
+            word-break: break-all;
+        }
+        .instance-table .num { color: var(--text-muted); width: 3rem; text-align: right; }
+        .hidden-row { display: none; }
+        .show-all-btn {
+            display: inline-block;
+            margin-top: 0.6rem;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.8rem;
+            color: #3b82f6;
+            background: none;
+            border: 1px solid #3b82f6;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .show-all-btn:hover { background: rgba(59,130,246,0.08); }
+        .table-wrapper { overflow-x: auto; }
+
+        /* Risk Score */
+        .risk-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+        }
+        .risk-badge .grade { font-size: 1.6rem; }
+        .risk-badge .score-text { font-size: 0.9rem; font-weight: 500; }
+        .grade-a { background: #dcfce7; color: #166534; }
+        .grade-b { background: #d1fae5; color: #065f46; }
+        .grade-c { background: #fef3c7; color: #92400e; }
+        .grade-d { background: #fee2e2; color: #b91c1c; }
+        .grade-f { background: #fde8e8; color: #991b1b; }
+        [data-theme="dark"] .grade-a { background: #064e3b; color: #6ee7b7; }
+        [data-theme="dark"] .grade-b { background: #065f46; color: #6ee7b7; }
+        [data-theme="dark"] .grade-c { background: #78350f; color: #fde68a; }
+        [data-theme="dark"] .grade-d { background: #7f1d1d; color: #fecaca; }
+        [data-theme="dark"] .grade-f { background: #450a0a; color: #fca5a5; }
+
+        /* Footer */
+        .footer { text-align: center; margin-top: 2rem; color: var(--text-muted); font-size: 0.8rem; padding: 1rem; }
+        .no-findings { text-align: center; padding: 3rem; background: var(--surface); border-radius: var(--radius); color: #059669; font-size: 1.1rem; box-shadow: var(--shadow); }
+        .hidden { display: none !important; }
+
+        @media (max-width: 640px) {
+            body { padding: 1rem 0.5rem; }
+            .header { flex-direction: column; gap: 1rem; }
+            .severity-count { min-width: 70px; }
+            .toolbar { flex-direction: column; }
+            .search-input { min-width: auto; width: 100%; }
+            .accordion-header { padding: 0.75rem 1rem; }
+            .group-meta { flex-direction: column; gap: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <h1>iOS IPA Security Analysis Report</h1>
+                <div class="meta">
+                    <div>App: <strong>{{ app_name }}</strong></div>
+                    <div>IPA: {{ ipa_path }}</div>
+                    <div>Scanned: {{ timestamp }}</div>
+                    <div>Analyzer: v{{ version }}</div>
+                </div>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light mode" aria-label="Toggle theme">&#9790;</button>
+        </div>
+
+        <!-- Summary -->
+        <div class="summary">
+            <div class="risk-badge grade-{{ risk_grade|lower }}">
+                <span class="grade">{{ risk_grade }}</span>
+                <span class="score-text">Risk Score: {{ risk_score }}/100</span>
+            </div>
+            <h2>{{ total_findings }} Total Finding{{ "s" if total_findings != 1 else "" }}</h2>
+            <div class="sub">{{ unique_count }} unique type{{ "s" if unique_count != 1 else "" }} across {{ total_findings }} instance{{ "s" if total_findings != 1 else "" }}</div>
+            <div class="summary-grid">
+                {% for sev_name, count in severity_counts.items() %}
+                {% if count > 0 %}
+                <div class="severity-count sev-{{ sev_name|lower }}">
+                    <span class="count">{{ count }}</span>
+                    <span class="label">{{ sev_name }}</span>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        {% if grouped_findings %}
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <input type="text" class="search-input" id="searchInput" placeholder="Search findings..." aria-label="Search findings">
+            <div class="filter-chips" id="filterChips">
+                {% for sev_name, count in severity_counts.items() %}
+                {% if count > 0 %}
+                <span class="chip sev-{{ sev_name|lower }}" data-severity="{{ sev_name|lower }}" onclick="toggleChip(this)">{{ sev_name }}</span>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Findings -->
+        {% for section in grouped_findings %}
+        <section class="severity-section" data-severity="{{ section.severity|lower }}">
+            <h2>
+                <span class="badge {{ section.severity|lower }}">{{ section.severity }}</span>
+                {{ section.severity }} Findings
+                <span class="section-count">({{ section.groups|length }} type{{ "s" if section.groups|length != 1 else "" }})</span>
+            </h2>
+
+            {% for group in section.groups %}
+            <div class="finding-group {{ group.severity|lower }}" data-search-text="{{ group.title|lower }} {{ group.description|lower }}">
+                <button class="accordion-header" aria-expanded="false" onclick="toggleAccordion(this)">
+                    <span class="badge {{ group.severity|lower }}">{{ group.severity }}</span>
+                    <span class="group-title">{{ group.title }}</span>
+                    <span class="count-badge">{{ group.count }}</span>
+                    <span class="chevron">&#9654;</span>
+                </button>
+                <div class="accordion-body">
+                    <div class="accordion-content">
+                        <p class="group-description">{{ group.description }}</p>
+                        <div class="group-meta">
+                            <span><strong>OWASP:</strong> {{ group.owasp }}</span>
+                            <span><strong>CWE:</strong> CWE-{{ group.cwe_id }}</span>
+                        </div>
+                        <div class="remediation-text">
+                            <strong>Remediation:</strong> {{ group.remediation }}
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="instance-table">
+                                <thead><tr><th class="num">#</th><th>Location</th><th>Evidence</th></tr></thead>
+                                <tbody>
+                                {% for inst in group.instances %}
+                                <tr{% if loop.index > 20 %} class="hidden-row"{% endif %}>
+                                    <td class="num">{{ loop.index }}</td>
+                                    <td>{{ inst.location }}</td>
+                                    <td><code title="{{ inst.evidence }}">{{ inst.evidence }}</code></td>
+                                </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% if group.count > 20 %}
+                        <button class="show-all-btn" onclick="showAllInstances(this)">Show all {{ group.count }} instances</button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </section>
+        {% endfor %}
+
+        {% else %}
+        <div class="no-findings">No security findings detected.</div>
+        {% endif %}
+
+        <div class="footer">
+            Generated by IPA Analyzer v{{ version }}
+        </div>
+    </div>
+
+    <script>
+    /* Theme toggle */
+    function toggleTheme() {
+        var html = document.documentElement;
+        var current = html.getAttribute('data-theme');
+        var next = current === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        try { localStorage.setItem('ipa-report-theme', next); } catch(e) {}
+        document.querySelector('.theme-toggle').textContent = next === 'dark' ? '\u2600' : '\u263E';
+    }
+    (function() {
+        try {
+            var saved = localStorage.getItem('ipa-report-theme');
+            if (saved === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                document.querySelector('.theme-toggle').textContent = '\u2600';
+            }
+        } catch(e) {}
+    })();
+
+    /* Accordion */
+    function toggleAccordion(btn) {
+        var expanded = btn.getAttribute('aria-expanded') === 'true';
+        var body = btn.nextElementSibling;
+        btn.setAttribute('aria-expanded', !expanded);
+        if (!expanded) {
+            body.style.maxHeight = body.scrollHeight + 'px';
+        } else {
+            body.style.maxHeight = '0';
+        }
+    }
+
+    /* Show all instances */
+    function showAllInstances(btn) {
+        var rows = btn.parentElement.querySelectorAll('.hidden-row');
+        for (var i = 0; i < rows.length; i++) { rows[i].classList.remove('hidden-row'); }
+        btn.classList.add('hidden');
+        /* recalc accordion height */
+        var body = btn.closest('.accordion-body');
+        if (body) { body.style.maxHeight = body.scrollHeight + 'px'; }
+    }
+
+    /* Search */
+    var searchTimer;
+    document.getElementById('searchInput').addEventListener('input', function() {
+        clearTimeout(searchTimer);
+        var val = this.value.toLowerCase();
+        searchTimer = setTimeout(function() { applyFilters(val); }, 200);
+    });
+
+    /* Severity filter chips */
+    var disabledSeverities = {};
+    function toggleChip(chip) {
+        var sev = chip.getAttribute('data-severity');
+        if (disabledSeverities[sev]) {
+            delete disabledSeverities[sev];
+            chip.classList.remove('inactive');
+        } else {
+            disabledSeverities[sev] = true;
+            chip.classList.add('inactive');
+        }
+        var search = document.getElementById('searchInput').value.toLowerCase();
+        applyFilters(search);
+    }
+
+    function applyFilters(searchText) {
+        var sections = document.querySelectorAll('.severity-section');
+        for (var s = 0; s < sections.length; s++) {
+            var sec = sections[s];
+            var sev = sec.getAttribute('data-severity');
+            if (disabledSeverities[sev]) {
+                sec.classList.add('hidden');
+                continue;
+            }
+            sec.classList.remove('hidden');
+            var groups = sec.querySelectorAll('.finding-group');
+            var visibleCount = 0;
+            for (var g = 0; g < groups.length; g++) {
+                var grp = groups[g];
+                var text = grp.getAttribute('data-search-text') || '';
+                if (searchText && text.indexOf(searchText) === -1) {
+                    grp.classList.add('hidden');
+                } else {
+                    grp.classList.remove('hidden');
+                    visibleCount++;
+                }
+            }
+            if (visibleCount === 0) { sec.classList.add('hidden'); }
+        }
+    }
+    </script>
+</body>
+</html>

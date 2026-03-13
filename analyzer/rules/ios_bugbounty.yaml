@@ -1,0 +1,768 @@
+rules:
+  # =============================================================================
+  # iOS Bug Bounty Ruleset
+  # Sources: HackTricks iOS checklist, HackerOne/Bugcrowd patterns, OWASP MASTG
+  # Designed for binary string analysis (complements ios_security.yaml)
+  # =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # Category 1: SSL/TLS Weaknesses
+  # ---------------------------------------------------------------------------
+  - id: bb_ssl_selfsigned_accept
+    name: "Self-signed/invalid SSL certificate acceptance"
+    pattern: "allowInvalidCertificates|trustAllCertificates|setAllowsAnyHTTPSCertificate|kCFStreamSSLAllowsExpiredCertificates|kCFStreamSSLAllowsAnyRoot"
+    severity: high
+    description: "The app may accept invalid or self-signed SSL certificates, allowing MITM attacks."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 295
+    remediation: "Implement proper certificate validation. Never accept self-signed certificates in production."
+
+  - id: bb_ssl_verify_disabled
+    name: "SSL verification explicitly disabled"
+    pattern: "(?i)(validateSSL.*false|sslVerification.*disabled|CURLOPT_SSL_VERIFYPEER.*0|validatesSecureCertificate.*NO)"
+    severity: high
+    description: "SSL certificate verification is explicitly disabled, allowing MITM attacks."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 295
+    remediation: "Enable SSL verification for all network connections."
+
+  - id: bb_ssl_trust_policy_disabled
+    name: "Alamofire/URLSession trust evaluation disabled"
+    pattern: "DisabledTrustEvaluator|ServerTrustPolicy\\.disableEvaluation|performDefaultEvaluation.*false"
+    severity: critical
+    description: "SSL trust evaluation is disabled via Alamofire or custom URLSession delegate."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 295
+    remediation: "Use proper certificate pinning with PinnedCertificatesTrustEvaluator or TrustKit."
+
+  - id: bb_tls10_explicit
+    name: "TLS 1.0 explicitly allowed"
+    pattern: "tls_protocol_version_t\\.TLSv10|kTLSProtocol1\\b|NSStreamSocketSecurityLevelTLSv1\\b"
+    severity: high
+    description: "TLS 1.0 is explicitly enabled. It has known vulnerabilities (BEAST, POODLE)."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 327
+    remediation: "Require TLS 1.2 minimum. Use tls_protocol_version_t.TLSv12 or higher."
+
+  - id: bb_tls11_explicit
+    name: "TLS 1.1 explicitly allowed"
+    pattern: "tls_protocol_version_t\\.TLSv11|kTLSProtocol11"
+    severity: medium
+    description: "TLS 1.1 is explicitly enabled. It is deprecated and should not be used."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 327
+    remediation: "Require TLS 1.2 minimum. Prefer TLS 1.3 where possible."
+
+  - id: bb_ssl_hostname_noverify
+    name: "SSL hostname verification disabled"
+    pattern: "(?i)(verifyHostname.*false|hostnameVerifier.*ALLOW_ALL|allowInvalidHostnames)"
+    severity: high
+    description: "SSL hostname verification is disabled, allowing connections to servers with mismatched certificates."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 295
+    remediation: "Enable hostname verification for all SSL connections."
+
+  - id: bb_nsurlsession_use_credential
+    name: "URLSession delegate accepts server certificate unconditionally"
+    pattern: "didReceiveChallenge.*\\.useCredential|completionHandler\\(\\.useCredential"
+    severity: medium
+    description: "The URLSession delegate may unconditionally accept server certificates."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 295
+    remediation: "Validate the server trust before calling completionHandler(.useCredential)."
+
+  # ---------------------------------------------------------------------------
+  # Category 2: WebView Security
+  # ---------------------------------------------------------------------------
+  - id: bb_webview_js_injection
+    name: "WebView JavaScript injection risk"
+    pattern: "evaluateJavaScript\\(|stringByEvaluatingJavaScriptFromString"
+    severity: medium
+    description: "The app evaluates JavaScript in WebViews. If user input reaches this, XSS is possible."
+    owasp: "M7 - Client Code Quality"
+    cwe_id: 79
+    remediation: "Sanitize all input before passing to evaluateJavaScript. Use WKContentWorld for isolation."
+
+  - id: bb_webview_universal_file_access
+    name: "WebView allows universal file access"
+    pattern: "allowUniversalAccessFromFileURLs|allowFileAccessFromFileURLs"
+    severity: high
+    description: "WebView allows file:// URLs to access content from any origin, enabling data exfiltration."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 200
+    remediation: "Disable universal file access in WebView configuration."
+
+  - id: bb_webview_js_bridge
+    name: "WebView JavaScript bridge registered"
+    pattern: "addScriptMessageHandler|webkit\\.messageHandlers"
+    severity: medium
+    description: "A JavaScript-to-native bridge is registered. Injected scripts can call native functions."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 749
+    remediation: "Validate all messages from JavaScript bridge. Restrict bridge to trusted origins only."
+
+  - id: bb_webview_file_access
+    name: "WebView loads local file URLs"
+    pattern: "loadFileURL.*allowingReadAccessTo|allowingReadAccessTo.*file:///"
+    severity: medium
+    description: "WebView loads local files which may expose sensitive app data to web content."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 200
+    remediation: "Restrict file access scope to the minimum required directory."
+
+  - id: bb_webview_loadhtml
+    name: "WebView loads HTML string content"
+    pattern: "loadHTMLString"
+    severity: low
+    description: "WebView loads HTML from a string. If user-controlled, this enables JavaScript injection."
+    owasp: "M7 - Client Code Quality"
+    cwe_id: 79
+    remediation: "Never pass untrusted input to loadHTMLString. Use loadRequest with validated URLs instead."
+
+  - id: bb_javascript_enabled
+    name: "JavaScript explicitly enabled in WKWebView"
+    pattern: "javaScriptEnabled\\s*=\\s*true"
+    severity: info
+    description: "JavaScript is explicitly enabled in WKWebView configuration."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 79
+    remediation: "Disable JavaScript if not required. If needed, ensure all loaded content is trusted."
+
+  # ---------------------------------------------------------------------------
+  # Category 3: File Protection & Data at Rest
+  # ---------------------------------------------------------------------------
+  - id: bb_file_protection_none
+    name: "File stored with no protection"
+    pattern: "NSFileProtectionNone|\\.noFileProtection|FileProtectionType\\.none"
+    severity: high
+    description: "Files are stored without data protection, accessible even when device is locked."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 311
+    remediation: "Use NSFileProtectionComplete or NSFileProtectionCompleteUnlessOpen."
+
+  - id: bb_keychain_accessible_always
+    name: "Keychain item accessible always (even when locked)"
+    pattern: "kSecAttrAccessibleAlways\\b"
+    severity: high
+    description: "Keychain items with kSecAttrAccessibleAlways are available even when the device is locked."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Use kSecAttrAccessibleWhenUnlocked or kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly."
+
+  - id: bb_keychain_after_first_unlock
+    name: "Keychain item accessible after first unlock"
+    pattern: "kSecAttrAccessibleAfterFirstUnlock\\b"
+    severity: medium
+    description: "Keychain items accessible after first unlock persist in memory during device uptime."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "For sensitive data, use kSecAttrAccessibleWhenUnlocked or stronger ACL."
+
+  - id: bb_sqlite_unencrypted
+    name: "SQLite database usage (potentially unencrypted)"
+    pattern: "sqlite3_open\\(|sqlite3_exec\\(|FMDB|SQLite\\.swift"
+    severity: medium
+    description: "SQLite database is used. Sensitive data should be encrypted with SQLCipher."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Use SQLCipher for database encryption. Alternatively, use encrypted CoreData stores."
+
+  - id: bb_realm_unencrypted
+    name: "Realm database without encryption"
+    pattern: "Realm\\(\\)|Realm\\.Configuration\\(\\)"
+    severity: medium
+    description: "Realm database may be initialized without encryption."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Use Realm.Configuration(encryptionKey:) with a securely stored key."
+
+  - id: bb_file_protection_first_auth
+    name: "File protection only until first authentication"
+    pattern: "NSFileProtectionCompleteUntilFirstUserAuthentication"
+    severity: low
+    description: "File is protected until first unlock after boot. Data remains in memory afterwards."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 311
+    remediation: "For highly sensitive data, use NSFileProtectionComplete instead."
+
+  # ---------------------------------------------------------------------------
+  # Category 4: Biometric Authentication Bypass
+  # ---------------------------------------------------------------------------
+  - id: bb_biometric_bool_bypass
+    name: "Biometric auth returns boolean (bypassable)"
+    pattern: "LAContext.*evaluatePolicy|canEvaluatePolicy.*deviceOwner"
+    severity: high
+    description: "Biometric auth using LAContext returns a boolean that can be bypassed with Frida/Objection."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 303
+    remediation: "Back biometric auth with Keychain ACL (SecAccessControlCreateWithFlags). Never rely on boolean alone."
+
+  - id: bb_biometric_weak_acl
+    name: "Weak biometric ACL flag (biometryAny/userPresence)"
+    pattern: "\\.biometryAny|\\.userPresence|\\.touchIDAny"
+    severity: high
+    description: "Weak ACL flag allows any enrolled biometry to access the item, including attacker-added biometrics."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 305
+    remediation: "Use .biometryCurrentSet or .touchIDCurrentSet to invalidate on biometric changes."
+
+  - id: bb_biometric_empty_fallback
+    name: "Biometric auth with empty fallback title"
+    pattern: "localizedFallbackTitle\\s*=\\s*\"\""
+    severity: medium
+    description: "Empty fallback title hides the password fallback button, degrading UX without improving security."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 287
+    remediation: "Provide a meaningful fallback mechanism or remove fallback entirely with proper error handling."
+
+  - id: bb_biometric_domain_state
+    name: "Biometric domain state tracking"
+    pattern: "evaluatedPolicyDomainState"
+    severity: info
+    description: "App checks biometric domain state changes. This is a positive security indicator."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 287
+    remediation: "Good practice. Ensure the app reacts appropriately to biometric enrollment changes."
+
+  - id: bb_biometric_device_passcode_acl
+    name: "Keychain protected by device passcode only"
+    pattern: "\\.devicePasscode"
+    severity: low
+    description: "Keychain ACL uses device passcode. Biometric authentication provides stronger protection."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 305
+    remediation: "Consider using .biometryCurrentSet for stronger per-user authentication."
+
+  # ---------------------------------------------------------------------------
+  # Category 5: Clipboard/Pasteboard
+  # ---------------------------------------------------------------------------
+  - id: bb_pasteboard_write
+    name: "Data written to general pasteboard"
+    pattern: "UIPasteboard\\.general\\.string\\s*=|generalPasteboard.*setString|generalPasteboard.*setValue"
+    severity: medium
+    description: "App writes data to the shared pasteboard. Other apps can read this data."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Never copy sensitive data to pasteboard. Use UIPasteboard with expirationDate if needed."
+
+  - id: bb_pasteboard_persistent
+    name: "Persistent pasteboard data"
+    pattern: "setPersistent.*true|persistent\\s*:\\s*true"
+    severity: medium
+    description: "Pasteboard data is set to persist across app launches and device reboots."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Avoid persistent pasteboard items. Set expirationDate for any pasteboard content."
+
+  - id: bb_pasteboard_change_listener
+    name: "App monitors pasteboard changes"
+    pattern: "UIPasteboardChangedNotification|changeCount"
+    severity: info
+    description: "App monitors pasteboard changes. This could be a clipper-style attack indicator."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Ensure pasteboard monitoring is for legitimate functionality only."
+
+  - id: bb_pasteboard_read
+    name: "App reads from general pasteboard"
+    pattern: "UIPasteboard\\.general\\.string\\b|UIPasteboard\\.general\\.items"
+    severity: low
+    description: "App reads data from the shared pasteboard. This may capture sensitive data from other apps."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Only access pasteboard when user explicitly initiates a paste action."
+
+  # ---------------------------------------------------------------------------
+  # Category 6: Database Without Encryption
+  # ---------------------------------------------------------------------------
+  - id: bb_coredata_usage
+    name: "CoreData database usage"
+    pattern: "NSManagedObjectContext|NSPersistentStoreCoordinator|NSPersistentContainer"
+    severity: info
+    description: "App uses CoreData for persistence. Sensitive data should be encrypted."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Enable NSPersistentStoreFileProtectionKey with appropriate protection level."
+
+  - id: bb_keychain_icloud_sync
+    name: "Keychain items synced to iCloud"
+    pattern: "kSecAttrSynchronizable.*kCFBooleanTrue|kSecAttrSynchronizable.*true"
+    severity: medium
+    description: "Keychain items are synced to iCloud, exposing them across all user devices."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Disable iCloud sync for sensitive keychain items. Use kSecAttrSynchronizable = false."
+
+  - id: bb_userdefaults_sensitive
+    name: "Sensitive data in UserDefaults"
+    pattern: "(?i)UserDefaults\\.standard\\.set.*(?:token|password|secret|session|auth|credential|apiKey)"
+    severity: high
+    description: "Sensitive data stored in UserDefaults, which is unencrypted and easily accessible."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Store sensitive data in the iOS Keychain, not UserDefaults."
+
+  - id: bb_grdb_no_encryption
+    name: "GRDB database without encryption"
+    pattern: "DatabasePool\\(|DatabaseQueue\\("
+    severity: info
+    description: "GRDB database used. Ensure encryption is configured for sensitive data."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Use GRDB with SQLCipher for database encryption."
+
+  - id: bb_cookie_storage
+    name: "Cookie storage usage"
+    pattern: "HTTPCookieStorage\\.shared|sharedHTTPCookieStorage"
+    severity: info
+    description: "App uses shared cookie storage. Session cookies may persist on disk."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 539
+    remediation: "Set cookie expiration policies. Clear cookies on logout."
+
+  # ---------------------------------------------------------------------------
+  # Category 7: Anti-Debug & Simulator Detection (INFO - positive indicators)
+  # ---------------------------------------------------------------------------
+  - id: bb_antidebug_ptrace
+    name: "Anti-debugging via ptrace (positive indicator)"
+    pattern: "ptrace\\(PT_DENY_ATTACH|ptrace\\(31,"
+    severity: info
+    description: "App uses ptrace for anti-debugging. This is a positive security indicator."
+    owasp: "M9 - Reverse Engineering"
+    cwe_id: 693
+    remediation: "Presence indicates anti-debug. Note: ptrace is a non-public API and may cause App Store rejection."
+
+  - id: bb_antidebug_sysctl
+    name: "Anti-debugging via sysctl (positive indicator)"
+    pattern: "P_TRACED|CTL_KERN.*KERN_PROC|sysctl.*kinfo_proc"
+    severity: info
+    description: "App uses sysctl to detect debugger attachment. Positive security indicator."
+    owasp: "M9 - Reverse Engineering"
+    cwe_id: 693
+    remediation: "Good practice. Consider combining with other anti-tamper mechanisms."
+
+  - id: bb_antidebug_getppid
+    name: "Anti-debugging via getppid (positive indicator)"
+    pattern: "getppid\\(\\)"
+    severity: info
+    description: "App may use getppid to detect if parent process is a debugger."
+    owasp: "M9 - Reverse Engineering"
+    cwe_id: 693
+    remediation: "Positive indicator of anti-debug mechanisms."
+
+  - id: bb_simulator_detect
+    name: "Simulator detection (positive indicator)"
+    pattern: "SIMULATOR_DEVICE_NAME|TARGET_OS_SIMULATOR|Platform.*Simulator"
+    severity: info
+    description: "App detects simulator environment. Positive security indicator."
+    owasp: "M9 - Reverse Engineering"
+    cwe_id: 693
+    remediation: "Good practice. Restrict sensitive operations when running in simulator."
+
+  - id: bb_mach_port_debug
+    name: "Mach port anti-debugging (positive indicator)"
+    pattern: "task_get_exception_ports|mach_task_self\\(\\)|task_info"
+    severity: info
+    description: "App uses Mach ports for anti-debugging. Positive security indicator."
+    owasp: "M9 - Reverse Engineering"
+    cwe_id: 693
+    remediation: "Positive indicator of advanced anti-tamper mechanisms."
+
+  # ---------------------------------------------------------------------------
+  # Category 8: Cloud Provider Credentials
+  # ---------------------------------------------------------------------------
+  - id: bb_aws_access_key
+    name: "AWS Access Key ID"
+    pattern: "AKIA[0-9A-Z]{16}"
+    severity: critical
+    description: "AWS access key found. Attackers can use this to access AWS services on your behalf."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Remove AWS keys from client code. Use AWS Cognito or STS temporary credentials."
+
+  - id: bb_aws_secret_key
+    name: "AWS Secret Access Key"
+    pattern: "(?i)(aws_secret_access_key|aws_secret_key)\\s*[:=]\\s*['\"][A-Za-z0-9/+=]{40}"
+    severity: critical
+    description: "AWS secret key found. Full AWS account compromise is possible."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Never embed AWS secret keys in mobile apps. Use backend proxy or Cognito."
+
+  - id: bb_gcp_api_key
+    name: "Google Cloud API Key"
+    pattern: "AIza[0-9A-Za-z\\-_]{35}"
+    severity: high
+    description: "Google Cloud API key found. May allow unauthorized use of GCP services."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Restrict API key to specific APIs and bundle IDs. Use server-side proxy for sensitive APIs."
+
+  - id: bb_gcp_service_account
+    name: "GCP Service Account JSON key"
+    pattern: "\"type\"\\s*:\\s*\"service_account\""
+    severity: critical
+    description: "GCP service account credentials found. Full service account compromise possible."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Never embed service account keys in mobile apps. Use backend authentication."
+
+  - id: bb_azure_connection_string
+    name: "Azure connection string"
+    pattern: "DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey="
+    severity: critical
+    description: "Azure storage connection string found. Enables access to Azure storage resources."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Use Azure SAS tokens with minimal permissions. Never embed full connection strings."
+
+  - id: bb_firebase_db_url
+    name: "Firebase Realtime Database URL"
+    pattern: "https://[a-z0-9-]+\\.firebaseio\\.com"
+    severity: high
+    description: "Firebase database URL found. Check if database rules allow unauthorized access."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Ensure Firebase security rules restrict access. Test with /.json endpoint for open access."
+
+  - id: bb_firebase_json_access
+    name: "Firebase database with .json access"
+    pattern: "firebaseio\\.com.*\\.json"
+    severity: critical
+    description: "Firebase URL with .json suffix found. This pattern is used for direct REST API access."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Verify Firebase security rules. Remove .json references from client code."
+
+  - id: bb_private_key_pem
+    name: "PEM-encoded private key"
+    pattern: "-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----"
+    severity: critical
+    description: "PEM-encoded private key found in binary. Complete key compromise."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 321
+    remediation: "Remove private keys from the app. Use iOS Keychain or server-side key management."
+
+  - id: bb_jwt_hardcoded
+    name: "Hardcoded JWT token"
+    pattern: "eyJ[A-Za-z0-9_-]{10,}\\.eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]+"
+    severity: high
+    description: "JWT token found in binary. Tokens should be fetched at runtime, not hardcoded."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Fetch JWT tokens from the authentication server at runtime."
+
+  - id: bb_oauth_client_secret
+    name: "OAuth client secret in binary"
+    pattern: "(?i)(client_secret|oauth_secret)\\s*[:=]\\s*['\"][A-Za-z0-9_-]{20,}"
+    severity: high
+    description: "OAuth client secret found. Attackers can impersonate the application."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Use PKCE flow for public clients. Move client secrets to backend."
+
+  # ---------------------------------------------------------------------------
+  # Category 9: API Endpoint Exposure
+  # ---------------------------------------------------------------------------
+  - id: bb_graphql_endpoint
+    name: "GraphQL endpoint exposed"
+    pattern: "(?i)/graphql\\b|/graphiql|introspectionQuery|__schema"
+    severity: medium
+    description: "GraphQL endpoint found. Introspection may expose the entire API schema."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Disable introspection in production. Implement proper authorization on all queries."
+
+  - id: bb_swagger_endpoint
+    name: "API documentation endpoint exposed"
+    pattern: "(?i)/swagger|/api-docs|/openapi\\.json|/swagger-ui"
+    severity: medium
+    description: "API documentation endpoint found. Exposes complete API surface to attackers."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Remove API documentation endpoints from production builds."
+
+  - id: bb_debug_endpoint
+    name: "Debug/monitoring endpoint exposed"
+    pattern: "(?i)/debug\\b|/actuator|/health\\b|/metrics\\b|/__debug__"
+    severity: medium
+    description: "Debug or monitoring endpoints found. May expose internal system information."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Remove debug endpoints from production builds. Restrict access with authentication."
+
+  - id: bb_admin_endpoint
+    name: "Admin/management endpoint reference"
+    pattern: "(?i)/admin\\b|/administrator|/management\\b|/console\\b|/dashboard/api"
+    severity: medium
+    description: "Administrative endpoint references found. Potential unauthorized access vector."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Admin endpoints should require strong authentication and not be referenced in client code."
+
+  - id: bb_config_endpoint
+    name: "Configuration/environment endpoint"
+    pattern: "(?i)/config\\b|/\\.env\\b|/application\\.properties|/settings\\.json"
+    severity: high
+    description: "Configuration endpoint found. May expose secrets, database credentials, or API keys."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Never expose configuration endpoints. Use environment-specific build configurations."
+
+  - id: bb_test_endpoint
+    name: "Test/staging API endpoint"
+    pattern: "(?i)/test-api|/mock-api|/sandbox-api|/qa-api"
+    severity: medium
+    description: "Test or staging API endpoint found in production binary."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Remove test endpoints from release builds using build configurations."
+
+  - id: bb_version_endpoint
+    name: "Version/build info endpoint"
+    pattern: "(?i)/version\\b|/build-info|/app-info|/_version"
+    severity: low
+    description: "Version information endpoint found. May reveal server technology details."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Restrict version endpoints to internal networks only."
+
+  - id: bb_websocket_endpoint
+    name: "WebSocket endpoint reference"
+    pattern: "wss?://[a-zA-Z0-9.-]+(?::[0-9]+)?/(?:ws|socket|websocket|cable)"
+    severity: info
+    description: "WebSocket endpoint found. Ensure proper authentication and authorization."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 319
+    remediation: "Use wss:// (encrypted). Implement token-based auth on WebSocket connections."
+
+  # ---------------------------------------------------------------------------
+  # Category 10: Deep Link / Universal Link Handlers
+  # ---------------------------------------------------------------------------
+  - id: bb_deeplink_handler
+    name: "URL scheme handler registered"
+    pattern: "application.*open.*url.*options|openURL.*sourceApplication"
+    severity: info
+    description: "App handles deep link URLs. Test for URL scheme hijacking and parameter injection."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 939
+    remediation: "Validate all deep link parameters. Never auto-execute actions from deep links."
+
+  - id: bb_universal_link_handler
+    name: "Universal link handler registered"
+    pattern: "continue.*userActivity|NSUserActivity.*webpageURL"
+    severity: info
+    description: "App handles universal links. Verify domain association is properly configured."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 939
+    remediation: "Validate all universal link parameters. Ensure apple-app-site-association is correct."
+
+  - id: bb_deeplink_no_validation
+    name: "URL opened without validation"
+    pattern: "UIApplication\\.shared\\.open\\(URL\\(string:|canOpenURL.*URL\\(string:"
+    severity: medium
+    description: "App opens URLs constructed from strings. If user-controlled, this enables URL injection."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 939
+    remediation: "Validate URL scheme and host before opening. Whitelist allowed schemes."
+
+  - id: bb_custom_scheme_handler
+    name: "Custom URL scheme handler"
+    pattern: "handleOpenURL|url\\.scheme|url\\.host|url\\.queryItems"
+    severity: info
+    description: "App processes custom URL scheme parameters. Verify input validation."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 939
+    remediation: "Validate all URL parameters. Never trust scheme-delivered data without verification."
+
+  - id: bb_scene_delegate_url
+    name: "Scene delegate URL handling"
+    pattern: "scene.*openURLContexts|connectionOptions.*urlContexts"
+    severity: info
+    description: "App uses SceneDelegate for URL handling (iOS 13+)."
+    owasp: "M1 - Improper Platform Usage"
+    cwe_id: 939
+    remediation: "Apply same validation as AppDelegate URL handlers."
+
+  # ---------------------------------------------------------------------------
+  # Category 11: OAuth / Authentication Patterns
+  # ---------------------------------------------------------------------------
+  - id: bb_oauth_token_storage
+    name: "OAuth token stored in code"
+    pattern: "(?i)(access_token|refresh_token|id_token)\\s*[:=]\\s*['\"][A-Za-z0-9._-]{20,}"
+    severity: high
+    description: "OAuth token hardcoded in the binary. Token can be extracted and reused."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Never hardcode tokens. Fetch from auth server at runtime and store in Keychain."
+
+  - id: bb_oauth_implicit_flow
+    name: "OAuth implicit grant flow detected"
+    pattern: "response_type=token|#access_token="
+    severity: high
+    description: "OAuth implicit flow detected. Tokens are exposed in URL fragments, vulnerable to leakage."
+    owasp: "M5 - Insecure Communication"
+    cwe_id: 522
+    remediation: "Use Authorization Code flow with PKCE instead of implicit flow."
+
+  - id: bb_auth_hardcoded_creds
+    name: "Hardcoded authentication credentials"
+    pattern: "(?i)(username|user|login)\\s*[:=]\\s*['\"][a-zA-Z0-9._@-]+['\"]"
+    severity: high
+    description: "Hardcoded username/login found. May indicate embedded test or default credentials."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Remove hardcoded credentials. Use proper authentication flows."
+
+  - id: bb_api_key_header
+    name: "API key in authorization header"
+    pattern: "(?i)(x-api-key|x-auth-token)\\s*[:=]\\s*['\"][A-Za-z0-9._-]{20,}"
+    severity: high
+    description: "API key found as a header value. Can be extracted from the binary."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Fetch API keys from server at runtime. Use short-lived tokens."
+
+  - id: bb_basic_auth
+    name: "HTTP Basic Authentication credentials"
+    pattern: "(?i)Authorization.*Basic\\s+[A-Za-z0-9+/=]{10,}"
+    severity: high
+    description: "HTTP Basic Auth header with base64 credentials found in binary."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Never hardcode Basic Auth credentials. Use OAuth or token-based authentication."
+
+  # ---------------------------------------------------------------------------
+  # Category 12: Screenshot & Screen Recording Protection
+  # ---------------------------------------------------------------------------
+  - id: bb_screenshot_notification
+    name: "Screenshot notification listener"
+    pattern: "UIApplicationUserDidTakeScreenshotNotification|userDidTakeScreenshot"
+    severity: info
+    description: "App listens for screenshot events. Positive security indicator for sensitive apps."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Good practice for financial/healthcare apps. Consider also preventing screenshots."
+
+  - id: bb_screen_capture_detect
+    name: "Screen recording detection"
+    pattern: "UIScreen\\.capturedDidChangeNotification|isCaptured"
+    severity: info
+    description: "App detects screen recording. Positive security indicator."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Good practice. Blur or hide sensitive content during screen recording."
+
+  - id: bb_secure_text_false
+    name: "Secure text entry disabled"
+    pattern: "isSecureTextEntry\\s*=\\s*false|secureTextEntry\\s*=\\s*false"
+    severity: medium
+    description: "Secure text entry explicitly disabled on a text field. Passwords may be visible."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Enable secureTextEntry for password and sensitive data input fields."
+
+  - id: bb_window_secure
+    name: "Window security / blur on background"
+    pattern: "makeSecure|isHidden.*applicationWillResignActive|applicationDidEnterBackground.*blur"
+    severity: info
+    description: "App implements window security for app switcher. Positive indicator."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 200
+    remediation: "Good practice. Ensures sensitive UI is hidden in the app switcher."
+
+  # ---------------------------------------------------------------------------
+  # Category 13: Cookie & Session
+  # ---------------------------------------------------------------------------
+  - id: bb_cookie_accept_all
+    name: "Cookie accept policy set to always"
+    pattern: "HTTPCookieAcceptPolicy\\.always|cookieAcceptPolicy.*always"
+    severity: low
+    description: "App accepts all cookies. Third-party tracking cookies may be stored."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 539
+    remediation: "Use HTTPCookieAcceptPolicy.onlyFromMainDocumentDomain to limit cookie scope."
+
+  - id: bb_wk_cookie_access
+    name: "WKWebView cookie store access"
+    pattern: "WKWebsiteDataStore.*httpCookieStore|getAllCookies"
+    severity: info
+    description: "App accesses WKWebView cookie store. Verify cookies don't contain sensitive data."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 539
+    remediation: "Clear cookies when user logs out. Don't store authentication tokens in cookies."
+
+  - id: bb_cookie_shared_container
+    name: "Cookie sharing between extensions/apps"
+    pattern: "sharedContainerIdentifier.*cookie|HTTPCookieStorage.*sharedCookieStorage"
+    severity: medium
+    description: "Cookies shared between app and extensions. Shared data must be properly protected."
+    owasp: "M2 - Insecure Data Storage"
+    cwe_id: 539
+    remediation: "Minimize shared cookie data. Use App Groups securely."
+
+  - id: bb_session_no_timeout
+    name: "Session with no expiration"
+    pattern: "(?i)session.*never.*expire|session.*timeout.*0|sessionExpiry.*-1"
+    severity: medium
+    description: "Session configured with no or infinite timeout. Sessions should expire."
+    owasp: "M3 - Insecure Authentication"
+    cwe_id: 613
+    remediation: "Implement session timeouts. Require re-authentication for sensitive operations."
+
+  # ---------------------------------------------------------------------------
+  # Category 14: Miscellaneous Bug Bounty Patterns
+  # ---------------------------------------------------------------------------
+  - id: bb_connection_string
+    name: "Database connection string in binary"
+    pattern: "(?i)(mongodb|mysql|postgresql|redis|amqp)://[^\\s'\"\\x00]+"
+    severity: critical
+    description: "Database connection string found. Enables direct database access."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 798
+    remediation: "Never embed database connection strings in mobile apps. Use backend APIs."
+
+  - id: bb_base64_secret
+    name: "Base64-encoded secret value"
+    pattern: "(?i)(secret|private_key|encryption_key).*[A-Za-z0-9+/]{40,}="
+    severity: medium
+    description: "Base64-encoded secret found. Encoding is not encryption."
+    owasp: "M9 - Insecure Data Storage"
+    cwe_id: 312
+    remediation: "Never rely on base64 encoding for security. Use proper encryption and key management."
+
+  - id: bb_hardcoded_pin_otp
+    name: "Hardcoded PIN or OTP code"
+    pattern: "(?i)(pin|otp|mfa_code|verification_code)\\s*[:=]\\s*['\"][0-9]{4,8}['\"]"
+    severity: high
+    description: "Hardcoded PIN or OTP found. Attacker can use this to bypass verification."
+    owasp: "M3 - Insecure Authentication"
+    cwe_id: 798
+    remediation: "Generate OTP/PIN on server side. Never hardcode verification codes."
+
+  - id: bb_crash_reporting_key
+    name: "Crash reporting / monitoring API key"
+    pattern: "(?i)(bugsnag|sentry|crashlytics|datadog|newrelic).*['\"][a-f0-9]{32,}['\"]"
+    severity: low
+    description: "Crash reporting API key found. Could allow sending fake crash reports."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Restrict API key permissions. Use server-side crash reporting where possible."
+
+  - id: bb_feature_flag_key
+    name: "Feature flag service API key"
+    pattern: "(?i)(launchdarkly|flagsmith|configcat|split\\.io|optimizely)"
+    severity: low
+    description: "Feature flag service referenced. May allow feature discovery or manipulation."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Ensure feature flags don't control security-sensitive features client-side."
+
+  - id: bb_private_ip_hardcoded
+    name: "Private IP address hardcoded"
+    pattern: "(?:10|172\\.(?:1[6-9]|2[0-9]|3[01])|192\\.168)\\.\\d{1,3}\\.\\d{1,3}"
+    severity: medium
+    description: "Private/internal IP address found. Reveals internal network topology."
+    owasp: "M8 - Security Misconfiguration"
+    cwe_id: 200
+    remediation: "Remove internal IP addresses from production builds."
